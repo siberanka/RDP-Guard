@@ -1,0 +1,55 @@
+# Build outputs
+bin/
+obj/
+publish/
+out/
+
+# Visual Studio / MSBuild user state
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Debug symbols and compiler artifacts
+*.pdb
+*.mdb
+*.ilk
+*.obj
+*.log
+*.tlog
+*.lastbuildstate
+
+# Test and coverage outputs
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# NuGet / package cache
+packages/
+*.nupkg
+project.lock.json
+project.assets.json
+
+# Local runtime/config artifacts
+*.tmp
+*.bak
+*.broken_*
+rdpguard.log
+rdpguard.log.*
+settings.xml
+
+# OS / editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+*.swo
+*.tmp
+
+# Rider / ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
