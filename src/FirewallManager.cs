@@ -1,8 +1,11 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 
 namespace RDPGuard
 {
@@ -125,21 +128,87 @@ namespace RDPGuard
 
         private static IEnumerable<string> GetInboundBlockRemoteAddressScopes()
         {
-            var command = "Get-NetFirewallRule -Enabled True -Direction Inbound -Action Block | ForEach-Object { $rule = $_; $addr = $rule | Get-NetFirewallAddressFilter; $port = $rule | Get-NetFirewallPortFilter; $app = $rule | Get-NetFirewallApplicationFilter; $svc = $rule | Get-NetFirewallServiceFilter; if ($port.Protocol -eq 'Any' -and $app.Program -eq 'Any' -and $svc.Service -eq 'Any') { foreach ($remote in $addr.RemoteAddress) { $remote } } }";
-            var result = ProcessRunner.Run("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -Command \"" + command + "\"", 30000);
-            if (result.ExitCode != 0)
+            var stopwatch = Stopwatch.StartNew();
+            var scopes = new List<string>();
+            var ruleCount = 0;
+            var broadBlockRuleCount = 0;
+
+            var policyType = Type.GetTypeFromProgID("HNetCfg.FwPolicy2");
+            if (policyType == null)
             {
-                throw new InvalidOperationException("Firewall rule read failed: " + result.CombinedOutput);
+                throw new InvalidOperationException("Windows Firewall COM API is unavailable.");
             }
 
-            var scopes = result.Output
-                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                .SelectMany(line => line.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
-                .Select(item => item.Trim())
-                .Where(item => item.Length > 0)
-                .ToList();
-            AppLogger.Debug("Firewall scope read: scopeCount=" + scopes.Count + ", sample=" + FormatSample(scopes, 10));
+            var policy = Activator.CreateInstance(policyType);
+            var rules = GetProperty(policy, "Rules") as IEnumerable;
+            if (rules == null)
+            {
+                throw new InvalidOperationException("Windows Firewall COM API did not return a rule collection.");
+            }
+
+            foreach (var rule in rules)
+            {
+                ruleCount++;
+                try
+                {
+                    if (!IsBroadInboundBlockRule(rule))
+                    {
+                        continue;
+                    }
+
+                    broadBlockRuleCount++;
+                    var remoteAddresses = Convert.ToString(GetProperty(rule, "RemoteAddresses"));
+                    if (string.IsNullOrWhiteSpace(remoteAddresses))
+                    {
+                        continue;
+                    }
+
+                    scopes.AddRange(remoteAddresses
+                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(item => item.Trim())
+                        .Where(item => item.Length > 0));
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.WriteException("Firewall COM rule parse failed", ex);
+                }
+            }
+
+            stopwatch.Stop();
+            scopes = scopes.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            AppLogger.Debug("Firewall COM scope read: totalRules=" + ruleCount +
+                            ", broadBlockRules=" + broadBlockRuleCount +
+                            ", scopeCount=" + scopes.Count +
+                            ", elapsedMs=" + stopwatch.ElapsedMilliseconds +
+                            ", sample=" + FormatSample(scopes, 10));
             return scopes;
+        }
+
+        private static bool IsBroadInboundBlockRule(object rule)
+        {
+            var enabled = Convert.ToBoolean(GetProperty(rule, "Enabled"));
+            var direction = Convert.ToInt32(GetProperty(rule, "Direction"));
+            var action = Convert.ToInt32(GetProperty(rule, "Action"));
+            var protocol = Convert.ToInt32(GetProperty(rule, "Protocol"));
+            var applicationName = Convert.ToString(GetProperty(rule, "ApplicationName"));
+            var serviceName = Convert.ToString(GetProperty(rule, "ServiceName"));
+
+            return enabled &&
+                   direction == 1 &&
+                   action == 0 &&
+                   protocol == 256 &&
+                   string.IsNullOrWhiteSpace(applicationName) &&
+                   string.IsNullOrWhiteSpace(serviceName);
+        }
+
+        private static object GetProperty(object instance, string propertyName)
+        {
+            return instance.GetType().InvokeMember(
+                propertyName,
+                BindingFlags.GetProperty,
+                null,
+                instance,
+                null);
         }
 
         private static string FormatSample(IEnumerable<string> values, int limit)

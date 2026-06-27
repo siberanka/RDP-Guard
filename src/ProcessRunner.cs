@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
-using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 
 namespace RDPGuard
 {
@@ -10,10 +9,6 @@ namespace RDPGuard
         public static ProcessRunResult Run(string fileName, string arguments, int timeoutMilliseconds)
         {
             var stopwatch = Stopwatch.StartNew();
-            var output = new StringBuilder();
-            var error = new StringBuilder();
-            using (var outputDone = new ManualResetEvent(false))
-            using (var errorDone = new ManualResetEvent(false))
             using (var process = new Process())
             {
                 process.StartInfo = new ProcessStartInfo
@@ -26,51 +21,34 @@ namespace RDPGuard
                     RedirectStandardError = true
                 };
 
-                process.OutputDataReceived += (_, e) =>
-                {
-                    if (e.Data == null)
-                    {
-                        outputDone.Set();
-                        return;
-                    }
-
-                    output.AppendLine(e.Data);
-                };
-
-                process.ErrorDataReceived += (_, e) =>
-                {
-                    if (e.Data == null)
-                    {
-                        errorDone.Set();
-                        return;
-                    }
-
-                    error.AppendLine(e.Data);
-                };
-
                 AppLogger.Debug("Process start: file=" + fileName + ", timeoutMs=" + timeoutMilliseconds + ", args=" + SanitizeArguments(fileName, arguments));
                 process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
+                var outputTask = process.StandardOutput.ReadToEndAsync();
+                var errorTask = process.StandardError.ReadToEndAsync();
 
                 if (!process.WaitForExit(timeoutMilliseconds))
                 {
                     try
                     {
                         process.Kill();
+                        process.WaitForExit(2000);
                     }
                     catch
                     {
                     }
 
+                    WaitForReader(outputTask);
+                    WaitForReader(errorTask);
                     stopwatch.Stop();
                     AppLogger.Error("Process timeout: file=" + fileName + ", elapsedMs=" + stopwatch.ElapsedMilliseconds + ", args=" + SanitizeArguments(fileName, arguments));
                     throw new TimeoutException(fileName + " did not finish within " + timeoutMilliseconds + " ms.");
                 }
 
-                outputDone.WaitOne(2000);
-                errorDone.WaitOne(2000);
+                WaitForReader(outputTask);
+                WaitForReader(errorTask);
                 stopwatch.Stop();
+                var output = GetReaderResult(outputTask);
+                var error = GetReaderResult(errorTask);
 
                 AppLogger.Debug("Process exit: file=" + fileName +
                                 ", exitCode=" + process.ExitCode +
@@ -81,10 +59,35 @@ namespace RDPGuard
                 return new ProcessRunResult
                 {
                     ExitCode = process.ExitCode,
-                    Output = output.ToString(),
-                    Error = error.ToString(),
+                    Output = output,
+                    Error = error,
                     ElapsedMilliseconds = stopwatch.ElapsedMilliseconds
                 };
+            }
+        }
+
+        private static void WaitForReader(Task<string> readerTask)
+        {
+            try
+            {
+                readerTask.Wait(2000);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.WriteException("Process stream reader wait failed", ex);
+            }
+        }
+
+        private static string GetReaderResult(Task<string> readerTask)
+        {
+            try
+            {
+                return readerTask.IsCompleted ? (readerTask.Result ?? string.Empty) : string.Empty;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.WriteException("Process stream reader result failed", ex);
+                return string.Empty;
             }
         }
 
