@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Xml.Serialization;
 
 namespace RDPGuard
@@ -138,24 +139,7 @@ namespace RDPGuard
                 Whitelist.Add("::1");
             }
 
-            BlockedIps = (BlockedIps ?? new List<BlockedIpRecord>())
-                .Where(item => item != null && !string.IsNullOrWhiteSpace(item.IpAddress))
-                .Select(item =>
-                {
-                    item.IpAddress = item.IpAddress.Trim();
-                    if (string.IsNullOrWhiteSpace(item.RuleName))
-                    {
-                        item.RuleName = !string.IsNullOrWhiteSpace(item.InboundRuleName)
-                            ? item.InboundRuleName
-                            : item.OutboundRuleName;
-                    }
-
-                    return item;
-                })
-                .GroupBy(item => item.IpAddress.Trim(), StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.OrderByDescending(item => item.BlockedAtUtc).First())
-                .OrderByDescending(item => item.BlockedAtUtc)
-                .ToList();
+            BlockedIps = NormalizeBlockedRecords(BlockedIps);
         }
 
         private static int Clamp(int value, int minimum, int maximum)
@@ -171,6 +155,43 @@ namespace RDPGuard
             }
 
             return value;
+        }
+
+        private static List<BlockedIpRecord> NormalizeBlockedRecords(IEnumerable<BlockedIpRecord> records)
+        {
+            var latestByIp = new Dictionary<string, BlockedIpRecord>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in records ?? Enumerable.Empty<BlockedIpRecord>())
+            {
+                if (item == null || string.IsNullOrWhiteSpace(item.IpAddress))
+                {
+                    continue;
+                }
+
+                var ipAddress = item.IpAddress.Trim();
+                if (!IPAddress.TryParse(ipAddress, out _))
+                {
+                    continue;
+                }
+
+                item.IpAddress = ipAddress;
+                if (string.IsNullOrWhiteSpace(item.RuleName))
+                {
+                    item.RuleName = !string.IsNullOrWhiteSpace(item.InboundRuleName)
+                        ? item.InboundRuleName
+                        : item.OutboundRuleName;
+                }
+
+                if (!latestByIp.TryGetValue(ipAddress, out var existing) ||
+                    item.BlockedAtUtc > existing.BlockedAtUtc)
+                {
+                    latestByIp[ipAddress] = item;
+                }
+            }
+
+            return latestByIp.Values
+                .OrderByDescending(item => item.BlockedAtUtc)
+                .ToList();
         }
     }
 

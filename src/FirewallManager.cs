@@ -12,6 +12,7 @@ namespace RDPGuard
     public sealed class FirewallManager
     {
         private const string Prefix = "RDP_GUARD_";
+        private const int MaxRemoteIpArgumentLength = 22000;
 
         public FirewallBlockResult BlockIps(IEnumerable<string> ipAddresses)
         {
@@ -22,14 +23,31 @@ namespace RDPGuard
                 throw new ArgumentException("No valid IP address was provided for blocking.", nameof(ipAddresses));
             }
 
-            var ruleName = CreateRuleName();
-            AppLogger.Debug("Firewall block add: rule=" + ruleName + ", ipCount=" + ips.Count + ", sample=" + FormatSample(ips, 10));
-            RunNetsh("advfirewall firewall add rule name=\"" + ruleName + "\" dir=in action=block remoteip=" + string.Join(",", ips) + " protocol=any profile=any enable=yes");
-
-            return new FirewallBlockResult
+            var baseRuleName = CreateRuleName();
+            var chunks = SplitIntoSafeRuleChunks(ips);
+            var rules = new List<FirewallRuleScope>();
+            if (chunks.Count > 1)
             {
-                RuleName = ruleName
-            };
+                AppLogger.Write("Firewall block add split into " + chunks.Count + " rules because the remote IP list is too large for one safe netsh call.");
+            }
+
+            for (var index = 0; index < chunks.Count; index++)
+            {
+                var chunk = chunks[index];
+                var ruleName = chunks.Count == 1
+                    ? baseRuleName
+                    : baseRuleName + "_" + (index + 1).ToString("000");
+
+                AppLogger.Debug("Firewall block add: rule=" + ruleName + ", ipCount=" + chunk.Count + ", sample=" + FormatSample(chunk, 10));
+                RunNetsh("advfirewall firewall add rule name=\"" + ruleName + "\" dir=in action=block remoteip=" + string.Join(",", chunk) + " protocol=any profile=any enable=yes");
+                rules.Add(new FirewallRuleScope
+                {
+                    RuleName = ruleName,
+                    IpAddresses = chunk
+                });
+            }
+
+            return new FirewallBlockResult(rules);
         }
 
         public HashSet<string> FindAlreadyBlockedIps(IEnumerable<string> ipAddresses)
@@ -41,7 +59,7 @@ namespace RDPGuard
                 return result;
             }
 
-            var scopes = GetInboundBlockRemoteAddressScopes();
+            var scopes = GetInboundBlockRemoteAddressScopes().ToList();
             var matcher = new FirewallScopeMatcher(scopes);
             foreach (var ip in ips)
             {
@@ -51,7 +69,7 @@ namespace RDPGuard
                 }
             }
 
-            AppLogger.Debug("Firewall existing block lookup: inputIps=" + ips.Count + ", scopes=" + scopes.Count() + ", matches=" + result.Count);
+            AppLogger.Debug("Firewall existing block lookup: inputIps=" + ips.Count + ", scopes=" + scopes.Count + ", matches=" + result.Count);
             return result;
         }
 
@@ -115,6 +133,35 @@ namespace RDPGuard
         private static string CreateRuleName()
         {
             return Prefix + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+        }
+
+        private static List<List<string>> SplitIntoSafeRuleChunks(IReadOnlyList<string> ips)
+        {
+            var chunks = new List<List<string>>();
+            var current = new List<string>();
+            var currentLength = 0;
+
+            foreach (var ip in ips)
+            {
+                var addedLength = ip.Length + (current.Count == 0 ? 0 : 1);
+                if (current.Count > 0 && currentLength + addedLength > MaxRemoteIpArgumentLength)
+                {
+                    chunks.Add(current);
+                    current = new List<string>();
+                    currentLength = 0;
+                    addedLength = ip.Length;
+                }
+
+                current.Add(ip);
+                currentLength += addedLength;
+            }
+
+            if (current.Count > 0)
+            {
+                chunks.Add(current);
+            }
+
+            return chunks;
         }
 
         private static void RunNetsh(string arguments, bool allowFailure = false)
@@ -222,14 +269,33 @@ namespace RDPGuard
 
         private sealed class FirewallScopeMatcher
         {
-            private readonly List<ScopeEntry> _entries;
+            private readonly HashSet<IPAddress> _singleIps = new HashSet<IPAddress>();
+            private readonly List<ScopeEntry> _rangeEntries = new List<ScopeEntry>();
+            private bool _matchesAll;
 
             public FirewallScopeMatcher(IEnumerable<string> scopes)
             {
-                _entries = (scopes ?? Enumerable.Empty<string>())
-                    .Select(scope => ScopeEntry.TryParse(scope, out var entry) ? entry : null)
-                    .Where(entry => entry != null)
-                    .ToList();
+                foreach (var scope in scopes ?? Enumerable.Empty<string>())
+                {
+                    if (!ScopeEntry.TryParse(scope, out var entry))
+                    {
+                        continue;
+                    }
+
+                    if (entry.IsAny)
+                    {
+                        _matchesAll = true;
+                        continue;
+                    }
+
+                    if (entry.IsSingle)
+                    {
+                        _singleIps.Add(entry.SingleAddress);
+                        continue;
+                    }
+
+                    _rangeEntries.Add(entry);
+                }
             }
 
             public bool Contains(string ipText)
@@ -239,7 +305,12 @@ namespace RDPGuard
                     return false;
                 }
 
-                return _entries.Any(entry => entry.Contains(ip));
+                if (_matchesAll || _singleIps.Contains(ip))
+                {
+                    return true;
+                }
+
+                return _rangeEntries.Any(entry => entry.Contains(ip));
             }
         }
 
@@ -310,6 +381,12 @@ namespace RDPGuard
 
                 return false;
             }
+
+            public bool IsAny => _kind == EntryKind.Any;
+
+            public bool IsSingle => _kind == EntryKind.Single;
+
+            public IPAddress SingleAddress => _start;
 
             public bool Contains(IPAddress ip)
             {
@@ -434,6 +511,19 @@ namespace RDPGuard
 
     public sealed class FirewallBlockResult
     {
+        public FirewallBlockResult(List<FirewallRuleScope> rules)
+        {
+            Rules = rules ?? new List<FirewallRuleScope>();
+        }
+
+        public string RuleName => Rules.Count > 0 ? Rules[0].RuleName : string.Empty;
+
+        public List<FirewallRuleScope> Rules { get; }
+    }
+
+    public sealed class FirewallRuleScope
+    {
         public string RuleName { get; set; }
+        public List<string> IpAddresses { get; set; } = new List<string>();
     }
 }

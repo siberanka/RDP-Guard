@@ -9,6 +9,7 @@ namespace RDPGuard
 {
     public sealed class MainForm : Form
     {
+        private const int MaxDisplayedBlockedIps = 5000;
         private readonly GuardService _service;
         private readonly StartupManager _startupManager = new StartupManager();
         private readonly bool _startInTray;
@@ -356,15 +357,23 @@ namespace RDPGuard
 
             _blockedList.BeginUpdate();
             _blockedList.Items.Clear();
-            foreach (var item in config.BlockedIps.OrderByDescending(record => record.BlockedAtUtc))
+            var totalBlockedIps = config.BlockedIps.Count;
+            var displayedBlockedIps = 0;
+            foreach (var item in config.BlockedIps.Take(MaxDisplayedBlockedIps))
             {
                 var listItem = new ListViewItem(item.IpAddress);
                 listItem.SubItems.Add(item.BlockedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
                 listItem.SubItems.Add(item.FailureCount.ToString());
                 listItem.SubItems.Add(GetDisplayRuleName(item));
                 _blockedList.Items.Add(listItem);
+                displayedBlockedIps++;
             }
             _blockedList.EndUpdate();
+            if (totalBlockedIps > displayedBlockedIps)
+            {
+                _blockedTitleLabel.Text = L("BlockedIps") + " (" + displayedBlockedIps + "/" + totalBlockedIps + ")";
+            }
+
             _unblockButton.Enabled = _blockedList.SelectedItems.Count > 0;
         }
 

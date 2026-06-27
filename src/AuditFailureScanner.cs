@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using System.Xml.Linq;
 
 namespace RDPGuard
@@ -11,6 +12,8 @@ namespace RDPGuard
     public sealed class AuditFailureScanner
     {
         private static readonly XNamespace EventNamespace = "http://schemas.microsoft.com/win/2004/08/events/event";
+        private const int ReaderBatchSize = 64;
+        private const int YieldEveryRecords = 500;
 
         public ScanResult Scan(DateTime fromUtc, DateTime toUtc)
         {
@@ -35,9 +38,17 @@ namespace RDPGuard
 
             using (var reader = new EventLogReader(eventQuery))
             {
+                reader.BatchSize = ReaderBatchSize;
                 EventRecord record;
+                var recordsRead = 0;
                 while ((record = reader.ReadEvent()) != null)
                 {
+                    recordsRead++;
+                    if (recordsRead % YieldEveryRecords == 0)
+                    {
+                        Thread.Sleep(1);
+                    }
+
                     using (record)
                     {
                         if (!record.TimeCreated.HasValue)

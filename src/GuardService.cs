@@ -302,28 +302,36 @@ namespace RDPGuard
                 AppLogger.Debug("Check #" + checkId + " block candidates: count=" + candidates.Count +
                                 ", sample=" + FormatTopIpCounts(candidates, 10));
                 var firewallRule = _firewall.BlockIps(candidates.Keys);
-                var record = new BlockedIpRecord
-                {
-                    BlockedAtUtc = DateTime.UtcNow,
-                    RuleName = firewallRule.RuleName,
-                    InboundRuleName = firewallRule.RuleName,
-                    OutboundRuleName = string.Empty
-                };
+                var blockedAtUtc = DateTime.UtcNow;
+                var ipToRule = firewallRule.Rules
+                    .SelectMany(rule => rule.IpAddresses.Select(ip => new { Ip = ip, rule.RuleName }))
+                    .ToDictionary(item => item.Ip, item => item.RuleName, StringComparer.OrdinalIgnoreCase);
 
                 foreach (var item in candidates)
                 {
+                    var ruleName = ipToRule.TryGetValue(item.Key, out var matchedRuleName)
+                        ? matchedRuleName
+                        : firewallRule.RuleName;
+
                     blocked.Add(new BlockedIpRecord
                     {
                         IpAddress = item.Key,
-                        BlockedAtUtc = record.BlockedAtUtc,
+                        BlockedAtUtc = blockedAtUtc,
                         FailureCount = item.Value,
-                        RuleName = record.RuleName,
-                        InboundRuleName = record.InboundRuleName,
+                        RuleName = ruleName,
+                        InboundRuleName = ruleName,
                         OutboundRuleName = string.Empty
                     });
                 }
 
-                OnLog("Blocked in one firewall rule: " + firewallRule.RuleName + " (" + candidates.Count + " IP)");
+                if (firewallRule.Rules.Count <= 1)
+                {
+                    OnLog("Blocked in one firewall rule: " + firewallRule.RuleName + " (" + candidates.Count + " IP)");
+                }
+                else
+                {
+                    OnLog("Blocked in " + firewallRule.Rules.Count + " firewall rules because the IP list was too large for one safe rule (" + candidates.Count + " IP)");
+                }
             }
 
             lock (_sync)
