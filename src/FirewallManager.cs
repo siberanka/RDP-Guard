@@ -26,26 +26,37 @@ namespace RDPGuard
             var baseRuleName = CreateRuleName();
             var chunks = SplitIntoSafeRuleChunks(ips);
             var rules = new List<FirewallRuleScope>();
+            var createdRuleNames = new List<string>();
             if (chunks.Count > 1)
             {
                 AppLogger.Write("Firewall block add split into " + chunks.Count + " rules because the remote IP list is too large for one safe netsh call.");
             }
 
-            for (var index = 0; index < chunks.Count; index++)
+            try
             {
-                var chunk = chunks[index];
-                var ruleName = chunks.Count == 1
-                    ? baseRuleName
-                    : baseRuleName + "_" + (index + 1).ToString("000");
-
-                AppLogger.Debug("Firewall block add: rule=" + ruleName + ", ipCount=" + chunk.Count + ", sample=" + FormatSample(chunk, 10));
-                RunNetsh("advfirewall firewall add rule name=\"" + ruleName + "\" dir=in action=block remoteip=" + string.Join(",", chunk) + " protocol=any profile=any enable=yes");
-                rules.Add(new FirewallRuleScope
+                for (var index = 0; index < chunks.Count; index++)
                 {
-                    RuleName = ruleName,
-                    IpAddresses = chunk
-                });
+                    var chunk = chunks[index];
+                    var ruleName = chunks.Count == 1
+                        ? baseRuleName
+                        : baseRuleName + "_" + (index + 1).ToString("000");
+
+                    AppLogger.Debug("Firewall block add: rule=" + ruleName + ", ipCount=" + chunk.Count + ", sample=" + FormatSample(chunk, 10));
+                    RunNetsh("advfirewall firewall add rule name=\"" + ruleName + "\" dir=in action=block remoteip=" + string.Join(",", chunk) + " protocol=any profile=any enable=yes");
+                    createdRuleNames.Add(ruleName);
+                    rules.Add(new FirewallRuleScope
+                    {
+                        RuleName = ruleName,
+                        IpAddresses = chunk
+                    });
+                }
             }
+            catch
+            {
+                RollBackCreatedRules(createdRuleNames);
+                throw;
+            }
+
 
             return new FirewallBlockResult(rules);
         }
@@ -170,6 +181,32 @@ namespace RDPGuard
             if (result.ExitCode != 0 && !allowFailure)
             {
                 throw new InvalidOperationException("netsh exit code " + result.ExitCode + ": " + result.CombinedOutput);
+            }
+        }
+
+        private static void RollBackCreatedRules(IEnumerable<string> ruleNames)
+        {
+            var names = (ruleNames ?? Enumerable.Empty<string>())
+                .Where(IsManagedRuleName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (names.Count == 0)
+            {
+                return;
+            }
+
+            AppLogger.Write("Firewall block add failed; rolling back " + names.Count + " partially-created rule(s).");
+            foreach (var ruleName in names)
+            {
+                try
+                {
+                    RunNetsh("advfirewall firewall delete rule name=\"" + ruleName + "\"", allowFailure: true);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.WriteException("Firewall rollback failed for " + ruleName, ex);
+                }
             }
         }
 
