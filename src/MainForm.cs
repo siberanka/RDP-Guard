@@ -68,7 +68,7 @@ namespace RDPGuard
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            _service.Start();
+            _service.Start(runStartupLookback: true);
             StartShowWindowListener();
 
             if (_startInTray)
@@ -195,12 +195,12 @@ namespace RDPGuard
 
             _thresholdLabel = LabelFor(string.Empty, DockStyle.Fill);
             table.Controls.Add(_thresholdLabel, 0, 0);
-            _thresholdInput = new NumericUpDown { Minimum = 1, Maximum = 1000, Dock = DockStyle.Fill };
+            _thresholdInput = new NumericUpDown { Minimum = AppConfig.MinFailureThreshold, Maximum = AppConfig.MaxFailureThreshold, Dock = DockStyle.Fill };
             table.Controls.Add(_thresholdInput, 1, 0);
 
             _intervalLabel = LabelFor(string.Empty, DockStyle.Fill);
             table.Controls.Add(_intervalLabel, 0, 1);
-            _intervalInput = new NumericUpDown { Minimum = 1, Maximum = 1440, Dock = DockStyle.Fill };
+            _intervalInput = new NumericUpDown { Minimum = AppConfig.MinCheckIntervalMinutes, Maximum = AppConfig.MaxCheckIntervalMinutes, Dock = DockStyle.Fill };
             table.Controls.Add(_intervalInput, 1, 1);
 
             _startupCheck = new CheckBox { Dock = DockStyle.Fill };

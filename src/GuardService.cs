@@ -14,6 +14,7 @@ namespace RDPGuard
         private Timer _timer;
         private bool _isChecking;
         private bool _disposed;
+        private bool _nextTimerCheckUsesIntervalLookback;
         private long _checkSequence;
 
         public GuardService(AppConfig config)
@@ -35,7 +36,7 @@ namespace RDPGuard
             }
         }
 
-        public void Start()
+        public void Start(bool runStartupLookback = false)
         {
             RemoveWhitelistedBlocks();
 
@@ -49,6 +50,7 @@ namespace RDPGuard
                     return;
                 }
 
+                _nextTimerCheckUsesIntervalLookback = runStartupLookback;
                 ScheduleTimerLocked(TimeSpan.FromSeconds(3));
                 interval = Config.CheckIntervalMinutes;
                 started = true;
@@ -93,12 +95,18 @@ namespace RDPGuard
 
         private void CheckNowFromTimer()
         {
-            CheckNowCore(resetScheduleAfterCheck: false);
+            CheckNowCore(resetScheduleAfterCheck: false, usePendingIntervalLookback: true);
         }
 
         private void CheckNowCore(bool resetScheduleAfterCheck)
         {
+            CheckNowCore(resetScheduleAfterCheck, usePendingIntervalLookback: false);
+        }
+
+        private void CheckNowCore(bool resetScheduleAfterCheck, bool usePendingIntervalLookback)
+        {
             var skippedBecauseRunning = false;
+            var forceIntervalLookback = false;
             var checkId = 0L;
 
             lock (_sync)
@@ -110,6 +118,7 @@ namespace RDPGuard
 
                 if (resetScheduleAfterCheck)
                 {
+                    _nextTimerCheckUsesIntervalLookback = false;
                     StopTimerOnly();
                 }
 
@@ -121,6 +130,12 @@ namespace RDPGuard
                 {
                     StopTimerOnly();
                     _isChecking = true;
+                    if (usePendingIntervalLookback)
+                    {
+                        forceIntervalLookback = _nextTimerCheckUsesIntervalLookback;
+                        _nextTimerCheckUsesIntervalLookback = false;
+                    }
+
                     checkId = ++_checkSequence;
                 }
             }
@@ -133,7 +148,7 @@ namespace RDPGuard
 
             try
             {
-                RunCheck(checkId, resetScheduleAfterCheck);
+                RunCheck(checkId, resetScheduleAfterCheck, forceIntervalLookback);
             }
             catch (Exception ex)
             {
@@ -167,7 +182,7 @@ namespace RDPGuard
             }
         }
 
-        private void RunCheck(long checkId, bool manual)
+        private void RunCheck(long checkId, bool manual, bool forceIntervalLookback)
         {
             var stopwatch = Stopwatch.StartNew();
             AppConfig snapshot;
@@ -177,7 +192,7 @@ namespace RDPGuard
             }
 
             var nowUtc = DateTime.UtcNow;
-            var fromUtc = snapshot.LastCheckedUtc == DateTime.MinValue
+            var fromUtc = forceIntervalLookback || snapshot.LastCheckedUtc == DateTime.MinValue
                 ? nowUtc.AddMinutes(-snapshot.CheckIntervalMinutes)
                 : snapshot.LastCheckedUtc;
 
@@ -192,6 +207,7 @@ namespace RDPGuard
                             ", whitelistCount=" + snapshot.Whitelist.Count +
                             ", configuredBlockedCount=" + snapshot.BlockedIps.Count +
                             ", lastCheckedUtc=" + snapshot.LastCheckedUtc.ToString("o") +
+                            ", forceIntervalLookback=" + forceIntervalLookback +
                             ", monitorEnabled=" + snapshot.MonitorEnabled);
 
             var scan = _scanner.Scan(fromUtc, nowUtc);

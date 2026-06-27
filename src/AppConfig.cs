@@ -8,8 +8,15 @@ namespace RDPGuard
 {
     public sealed class AppConfig
     {
-        public int FailureThreshold { get; set; } = 3;
-        public int CheckIntervalMinutes { get; set; } = 15;
+        public const int DefaultFailureThreshold = 3;
+        public const int MinFailureThreshold = 1;
+        public const int MaxFailureThreshold = 1000;
+        public const int DefaultCheckIntervalMinutes = 15;
+        public const int MinCheckIntervalMinutes = 1;
+        public const int MaxCheckIntervalMinutes = 1440;
+
+        public int FailureThreshold { get; set; } = DefaultFailureThreshold;
+        public int CheckIntervalMinutes { get; set; } = DefaultCheckIntervalMinutes;
         public bool MonitorEnabled { get; set; } = true;
         public bool StartWithWindows { get; set; }
         public bool BlockOutbound { get; set; }
@@ -111,8 +118,8 @@ namespace RDPGuard
 
         public void Normalize()
         {
-            FailureThreshold = Math.Max(1, FailureThreshold);
-            CheckIntervalMinutes = Math.Max(1, CheckIntervalMinutes);
+            FailureThreshold = Clamp(FailureThreshold, MinFailureThreshold, MaxFailureThreshold);
+            CheckIntervalMinutes = Clamp(CheckIntervalMinutes, MinCheckIntervalMinutes, MaxCheckIntervalMinutes);
             LanguageCode = Localization.NormalizeLanguageCode(LanguageCode);
 
             Whitelist = (Whitelist ?? new List<string>())
@@ -149,6 +156,21 @@ namespace RDPGuard
                 .Select(group => group.OrderByDescending(item => item.BlockedAtUtc).First())
                 .OrderByDescending(item => item.BlockedAtUtc)
                 .ToList();
+        }
+
+        private static int Clamp(int value, int minimum, int maximum)
+        {
+            if (value < minimum)
+            {
+                return minimum;
+            }
+
+            if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
         }
     }
 
