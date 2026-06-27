@@ -22,6 +22,7 @@ namespace RDPGuard
         public bool StartWithWindows { get; set; }
         public bool BlockOutbound { get; set; }
         public string LanguageCode { get; set; } = "en";
+        public string ThemeMode { get; set; } = "system";
         public DateTime LastCheckedUtc { get; set; } = DateTime.MinValue;
         public List<string> Whitelist { get; set; } = new List<string> { "127.0.0.1", "::1" };
         public List<BlockedIpRecord> BlockedIps { get; set; } = new List<BlockedIpRecord>();
@@ -101,6 +102,7 @@ namespace RDPGuard
                 StartWithWindows = StartWithWindows,
                 BlockOutbound = BlockOutbound,
                 LanguageCode = LanguageCode,
+                ThemeMode = NormalizeThemeMode(ThemeMode),
                 LastCheckedUtc = LastCheckedUtc,
                 Whitelist = new List<string>(Whitelist ?? new List<string>()),
                 BlockedIps = (BlockedIps ?? new List<BlockedIpRecord>())
@@ -122,6 +124,7 @@ namespace RDPGuard
             FailureThreshold = Clamp(FailureThreshold, MinFailureThreshold, MaxFailureThreshold);
             CheckIntervalMinutes = Clamp(CheckIntervalMinutes, MinCheckIntervalMinutes, MaxCheckIntervalMinutes);
             LanguageCode = Localization.NormalizeLanguageCode(LanguageCode);
+            ThemeMode = NormalizeThemeMode(ThemeMode);
 
             Whitelist = (Whitelist ?? new List<string>())
                 .Select(item => (item ?? string.Empty).Trim())
@@ -192,6 +195,14 @@ namespace RDPGuard
             return latestByIp.Values
                 .OrderByDescending(item => item.BlockedAtUtc)
                 .ToList();
+        }
+
+        private static string NormalizeThemeMode(string value)
+        {
+            value = (value ?? string.Empty).Trim().ToLowerInvariant();
+            return value == "light" || value == "dark" || value == "system"
+                ? value
+                : "system";
         }
     }
 

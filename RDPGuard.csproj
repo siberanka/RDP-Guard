@@ -9,6 +9,7 @@
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <LangVersion>latest</LangVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\rdpguard.ico</ApplicationIcon>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
@@ -36,6 +37,7 @@
     <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="src\AppInfo.cs" />
     <Compile Include="src\AppConfig.cs" />
     <Compile Include="src\AppLogger.cs" />
     <Compile Include="src\AuditFailureScanner.cs" />
@@ -46,7 +48,11 @@
     <Compile Include="src\ProcessRunner.cs" />
     <Compile Include="src\Program.cs" />
     <Compile Include="src\StartupManager.cs" />
+    <Compile Include="src\UpdateChecker.cs" />
     <Compile Include="src\WhitelistMatcher.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="assets\rdpguard.ico" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
