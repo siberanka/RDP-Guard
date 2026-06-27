@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 
@@ -13,6 +14,7 @@ namespace RDPGuard
         private Timer _timer;
         private bool _isChecking;
         private bool _disposed;
+        private long _checkSequence;
 
         public GuardService(AppConfig config)
         {
@@ -97,6 +99,7 @@ namespace RDPGuard
         private void CheckNowCore(bool resetScheduleAfterCheck)
         {
             var skippedBecauseRunning = false;
+            var checkId = 0L;
 
             lock (_sync)
             {
@@ -118,6 +121,7 @@ namespace RDPGuard
                 {
                     StopTimerOnly();
                     _isChecking = true;
+                    checkId = ++_checkSequence;
                 }
             }
 
@@ -129,7 +133,7 @@ namespace RDPGuard
 
             try
             {
-                RunCheck();
+                RunCheck(checkId, resetScheduleAfterCheck);
             }
             catch (Exception ex)
             {
@@ -143,6 +147,7 @@ namespace RDPGuard
                     if (!_disposed && Config.MonitorEnabled)
                     {
                         ScheduleTimerLocked(TimeSpan.FromMinutes(Config.CheckIntervalMinutes));
+                        AppLogger.Debug("Check scheduled: nextDueMinutes=" + Config.CheckIntervalMinutes);
                     }
                 }
             }
@@ -162,8 +167,9 @@ namespace RDPGuard
             }
         }
 
-        private void RunCheck()
+        private void RunCheck(long checkId, bool manual)
         {
+            var stopwatch = Stopwatch.StartNew();
             AppConfig snapshot;
             lock (_sync)
             {
@@ -180,9 +186,18 @@ namespace RDPGuard
                 fromUtc = nowUtc.AddMinutes(-snapshot.CheckIntervalMinutes);
             }
 
-            OnLog("Check started: " + fromUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + " - " + nowUtc.ToLocalTime().ToString("HH:mm:ss"));
+            OnLog("Check #" + checkId + " started (" + (manual ? "manual" : "timer") + "): " + fromUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + " - " + nowUtc.ToLocalTime().ToString("HH:mm:ss"));
+            AppLogger.Debug("Check #" + checkId + " config: threshold=" + snapshot.FailureThreshold +
+                            ", intervalMinutes=" + snapshot.CheckIntervalMinutes +
+                            ", whitelistCount=" + snapshot.Whitelist.Count +
+                            ", configuredBlockedCount=" + snapshot.BlockedIps.Count +
+                            ", lastCheckedUtc=" + snapshot.LastCheckedUtc.ToString("o") +
+                            ", monitorEnabled=" + snapshot.MonitorEnabled);
 
             var scan = _scanner.Scan(fromUtc, nowUtc);
+            AppLogger.Debug("Check #" + checkId + " scan result: inspectedEvents=" + scan.EventsInspected +
+                            ", uniqueIps=" + scan.CountsByIp.Count +
+                            ", topIps=" + FormatTopIpCounts(scan.CountsByIp, 10));
             var whitelist = new WhitelistMatcher(snapshot.Whitelist);
             var blocked = new List<BlockedIpRecord>();
             var candidates = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -199,6 +214,9 @@ namespace RDPGuard
 
                 firewallBlocked = _firewall.FindAlreadyBlockedIps(ipsToVerify);
                 firewallReadSucceeded = true;
+                AppLogger.Debug("Check #" + checkId + " firewall de-duplication: verifiedIps=" + ipsToVerify.Count +
+                                ", alreadyBlocked=" + firewallBlocked.Count +
+                                ", sample=" + FormatSample(firewallBlocked, 10));
             }
             catch (Exception ex)
             {
@@ -214,6 +232,8 @@ namespace RDPGuard
                     .Select(group => new KeyValuePair<string, int>(group.Key, Math.Max(snapshot.FailureThreshold, group.Max(item => item.FailureCount))))
                     .ToList();
 
+                AppLogger.Debug("Check #" + checkId + " stale configured blocks: count=" + staleRecords.Count +
+                                ", sample=" + FormatSample(staleRecords.Select(item => item.Key), 10));
                 RemoveStaleConfiguredBlocks(staleRecords.Select(item => item.Key));
                 foreach (var item in staleRecords)
                 {
@@ -263,6 +283,8 @@ namespace RDPGuard
 
             if (candidates.Count > 0)
             {
+                AppLogger.Debug("Check #" + checkId + " block candidates: count=" + candidates.Count +
+                                ", sample=" + FormatTopIpCounts(candidates, 10));
                 var firewallRule = _firewall.BlockIps(candidates.Keys);
                 var record = new BlockedIpRecord
                 {
@@ -298,7 +320,8 @@ namespace RDPGuard
 
             OnConfigChanged();
             CheckCompleted?.Invoke(this, new CheckCompletedEventArgs(scan.EventsInspected, scan.CountsByIp.Count, blocked.Count));
-            OnLog("Check finished. Events: " + scan.EventsInspected + ", IPs: " + scan.CountsByIp.Count + ", new blocks: " + blocked.Count);
+            stopwatch.Stop();
+            OnLog("Check #" + checkId + " finished. Events: " + scan.EventsInspected + ", IPs: " + scan.CountsByIp.Count + ", new blocks: " + blocked.Count + ", elapsedMs=" + stopwatch.ElapsedMilliseconds);
         }
 
         private void RemoveWhitelistedBlocks()
@@ -326,6 +349,7 @@ namespace RDPGuard
 
             List<string> removedIps;
             var warnings = new List<string>();
+            AppLogger.Debug("RemoveBlockedIps requested: count=" + requested.Count + ", sample=" + FormatSample(requested, 10));
             lock (_sync)
             {
                 var matches = Config.BlockedIps
@@ -342,6 +366,7 @@ namespace RDPGuard
                     .Where(rule => !string.IsNullOrWhiteSpace(rule))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
+                AppLogger.Debug("RemoveBlockedIps matched: ipCount=" + matches.Count + ", affectedRules=" + affectedRules.Count);
 
                 Config.BlockedIps = Config.BlockedIps
                     .Where(item => !requested.Contains(item.IpAddress))
@@ -409,6 +434,7 @@ namespace RDPGuard
             }
 
             List<string> removedIps;
+            AppLogger.Debug("RemoveStaleConfiguredBlocks requested: count=" + requested.Count + ", sample=" + FormatSample(requested, 10));
             lock (_sync)
             {
                 var matches = Config.BlockedIps
@@ -485,6 +511,34 @@ namespace RDPGuard
         private void OnConfigChanged()
         {
             ConfigChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private static string FormatTopIpCounts(IEnumerable<KeyValuePair<string, int>> counts, int limit)
+        {
+            if (counts == null)
+            {
+                return string.Empty;
+            }
+
+            return string.Join(", ", counts
+                .OrderByDescending(item => item.Value)
+                .ThenBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+                .Take(limit)
+                .Select(item => item.Key + "=" + item.Value));
+        }
+
+        private static string FormatSample(IEnumerable<string> values, int limit)
+        {
+            if (values == null)
+            {
+                return string.Empty;
+            }
+
+            return string.Join(", ", values
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+                .Take(limit));
         }
 
     }

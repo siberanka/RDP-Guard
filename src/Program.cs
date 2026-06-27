@@ -20,6 +20,8 @@ namespace RDPGuard
             InstallExceptionHandlers();
             TrySetHighPriority();
             TryRegisterApplicationRestart();
+            AppLogger.WriteStartupSnapshot(args);
+            Application.ApplicationExit += (_, __) => AppLogger.Write("Application exit.");
 
             _mutex = new Mutex(true, "Global\\RDPGuard_7BB1E64C_1E2A_4F88_B88E_0D9E7F238C88", out var createdNew);
             if (!createdNew)
@@ -30,6 +32,7 @@ namespace RDPGuard
                 }
                 catch
                 {
+                    AppLogger.Warning("Second instance detected but existing instance signal failed.");
                     MessageBox.Show("RDP Guard is already running.", "RDP Guard", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
 
@@ -44,6 +47,7 @@ namespace RDPGuard
 
             if (!IsAdministrator())
             {
+                AppLogger.Warning("Application is not running as administrator; exiting before UI startup.");
                 MessageBox.Show("RDP Guard must run as administrator to read the Security log and manage Windows Firewall.", "RDP Guard", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }

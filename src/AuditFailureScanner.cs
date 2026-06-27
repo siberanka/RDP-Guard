@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
 using System.Linq;
 using System.Net;
@@ -15,11 +16,14 @@ namespace RDPGuard
         {
             if (toUtc <= fromUtc)
             {
+                AppLogger.Debug("Audit scan skipped because time range is empty.");
                 return new ScanResult();
             }
 
+            var stopwatch = Stopwatch.StartNew();
             var lookbackMillis = Math.Max(1000, (long)Math.Ceiling((DateTime.UtcNow - fromUtc).TotalMilliseconds) + 5000);
             var query = "*[System[(EventID=4625) and TimeCreated[timediff(@SystemTime) <= " + lookbackMillis + "]]]";
+            AppLogger.Debug("Audit scan start: fromUtc=" + fromUtc.ToString("o") + ", toUtc=" + toUtc.ToString("o") + ", lookbackMillis=" + lookbackMillis);
             var eventQuery = new EventLogQuery("Security", PathType.LogName, query)
             {
                 ReverseDirection = false,
@@ -63,6 +67,13 @@ namespace RDPGuard
                 }
             }
 
+            return BuildResult(inspected, counts, stopwatch);
+        }
+
+        private static ScanResult BuildResult(int inspected, Dictionary<string, int> counts, Stopwatch stopwatch)
+        {
+            stopwatch.Stop();
+            AppLogger.Debug("Audit scan finished: inspectedEvents=" + inspected + ", uniqueIps=" + counts.Count + ", elapsedMs=" + stopwatch.ElapsedMilliseconds);
             return new ScanResult
             {
                 EventsInspected = inspected,

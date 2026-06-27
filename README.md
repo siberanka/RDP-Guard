@@ -38,9 +38,10 @@ When closing the window, the app offers two choices: `Minimize to tray` or `Clos
 - `netsh`, PowerShell, and `schtasks` calls use timeout handling and async output reading so a stuck system command does not freeze the app indefinitely.
 - RDP Guard only updates or deletes its own safely named `RDP_GUARD_...` rules.
 - If config state and actual firewall state diverge, the next check revalidates the record.
-- Logs are written to `C:\ProgramData\RDPGuard\rdpguard.log` and rotated above 1 MB.
+- Logs are written to `C:\ProgramData\RDPGuard\rdpguard.log` and rotated above 2 MB.
 - Language selection only affects UI text. Event scanning, IP handling, firewall logic, counters, and time intervals are language-independent.
 - On startup, RDP Guard attempts to raise its process priority to `High`, logs unhandled exceptions, and registers with Windows application restart for better background resilience.
+- Debug logging is always bounded: `rdpguard.log` is capped at 2 MB and up to 4 rotated files are retained. Lines include timestamp, level, PID, thread ID, uptime, startup snapshot, check IDs, scan/firewall timings, process exit codes, and exception stack traces.
 
 ---
 
@@ -84,6 +85,7 @@ Pencere kapatilirken iki secenek sunulur: `Simge durumuna kucult` veya `Programi
 - `netsh`, PowerShell ve `schtasks` cagrilari timeout ve async output okuma ile calisir; takilan sistem komutu uygulamayi sonsuza kadar dondurmez.
 - RDP Guard yalnizca guvenli `RDP_GUARD_...` ad formatindaki kendi kurallarini gunceller veya siler.
 - Config ile gercek firewall durumu ayrisirsa bir sonraki kontrolde kayit yeniden dogrulanir.
-- Loglar `C:\ProgramData\RDPGuard\rdpguard.log` altinda tutulur ve 1 MB uzerinde rotate edilir.
+- Loglar `C:\ProgramData\RDPGuard\rdpguard.log` altinda tutulur ve 2 MB uzerinde rotate edilir.
 - Dil secimi yalnizca UI/metin katmanini etkiler. Event tarama, IP islemleri, firewall mantigi, sayaclar ve zaman araliklari dil ayarindan bagimsizdir.
 - RDP Guard acilista islem onceligini `High` yapmayi dener, yakalanmamis hatalari loglar ve arka plan kararliligi icin Windows application restart kaydi olusturur.
+- Debug log boyutu sinirlidir: `rdpguard.log` 2 MB ile sinirlanir ve en fazla 4 rotate dosyasi tutulur. Satirlarda zaman, seviye, PID, thread ID, uptime, startup ozeti, kontrol ID'leri, scan/firewall sureleri, process exit code'lari ve exception stack trace'leri bulunur.

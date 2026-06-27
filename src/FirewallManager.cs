@@ -20,6 +20,7 @@ namespace RDPGuard
             }
 
             var ruleName = CreateRuleName();
+            AppLogger.Debug("Firewall block add: rule=" + ruleName + ", ipCount=" + ips.Count + ", sample=" + FormatSample(ips, 10));
             RunNetsh("advfirewall firewall add rule name=\"" + ruleName + "\" dir=in action=block remoteip=" + string.Join(",", ips) + " protocol=any profile=any enable=yes");
 
             return new FirewallBlockResult
@@ -47,6 +48,7 @@ namespace RDPGuard
                 }
             }
 
+            AppLogger.Debug("Firewall existing block lookup: inputIps=" + ips.Count + ", scopes=" + scopes.Count() + ", matches=" + result.Count);
             return result;
         }
 
@@ -64,6 +66,7 @@ namespace RDPGuard
                 return;
             }
 
+            AppLogger.Debug("Firewall scope update: rule=" + ruleName + ", ipCount=" + ips.Count + ", sample=" + FormatSample(ips, 10));
             RunNetsh("advfirewall firewall set rule name=\"" + ruleName + "\" new remoteip=" + string.Join(",", ips));
         }
 
@@ -74,6 +77,7 @@ namespace RDPGuard
                 return;
             }
 
+            AppLogger.Debug("Firewall rule delete: rule=" + ruleName);
             RunNetsh("advfirewall firewall delete rule name=\"" + ruleName + "\"", allowFailure: true);
         }
 
@@ -115,7 +119,7 @@ namespace RDPGuard
             var result = ProcessRunner.Run("netsh.exe", arguments, 30000);
             if (result.ExitCode != 0 && !allowFailure)
             {
-                throw new InvalidOperationException("netsh hata kodu " + result.ExitCode + ": " + result.CombinedOutput);
+                throw new InvalidOperationException("netsh exit code " + result.ExitCode + ": " + result.CombinedOutput);
             }
         }
 
@@ -125,15 +129,26 @@ namespace RDPGuard
             var result = ProcessRunner.Run("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -Command \"" + command + "\"", 30000);
             if (result.ExitCode != 0)
             {
-                throw new InvalidOperationException("Firewall kural okuma hatasi: " + result.CombinedOutput);
+                throw new InvalidOperationException("Firewall rule read failed: " + result.CombinedOutput);
             }
 
-            return result.Output
+            var scopes = result.Output
                 .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                 .SelectMany(line => line.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                 .Select(item => item.Trim())
                 .Where(item => item.Length > 0)
                 .ToList();
+            AppLogger.Debug("Firewall scope read: scopeCount=" + scopes.Count + ", sample=" + FormatSample(scopes, 10));
+            return scopes;
+        }
+
+        private static string FormatSample(IEnumerable<string> values, int limit)
+        {
+            return string.Join(", ", (values ?? Enumerable.Empty<string>())
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+                .Take(limit));
         }
 
         private sealed class FirewallScopeMatcher
