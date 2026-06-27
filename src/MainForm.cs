@@ -74,8 +74,8 @@ namespace RDPGuard
             Text = "RDP Guard";
             Icon = LoadApplicationIcon();
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(980, 680);
-            Size = new Size(1060, 740);
+            MinimumSize = new Size(820, 600);
+            Size = new Size(1080, 760);
             Font = new Font("Segoe UI", 9F);
             BackColor = _theme.WindowBack;
             ShowInTaskbar = !startInTray;
@@ -84,6 +84,7 @@ namespace RDPGuard
             BuildUi();
             BuildTray();
             RefreshFromConfig();
+            Resize += (_, __) => ResizeBlockedColumns();
         }
 
         protected override void OnLoad(EventArgs e)
@@ -134,16 +135,16 @@ namespace RDPGuard
                 ColumnCount = 1,
                 RowCount = 4
             };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 224));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 86));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 244));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
             Controls.Add(root);
 
             var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Margin = new Padding(0, 0, 0, 8) };
-            header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 54));
-            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52));
             root.Controls.Add(header, 0, 0);
 
             var iconBox = new PictureBox
@@ -163,7 +164,7 @@ namespace RDPGuard
                 Text = "RDP Guard",
                 AutoSize = false,
                 Dock = DockStyle.Fill,
-                Font = new Font("Segoe UI Semibold", 22F),
+                Font = new Font("Segoe UI Semibold", 21F),
                 TextAlign = ContentAlignment.BottomLeft
             };
             _versionLabel = new Label
@@ -184,13 +185,15 @@ namespace RDPGuard
             {
                 AutoEllipsis = true,
                 TextAlign = ContentAlignment.MiddleRight,
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Fill,
+                Padding = new Padding(8, 0, 0, 0)
             };
             _updateStatusLabel = new Label
             {
                 AutoEllipsis = true,
                 TextAlign = ContentAlignment.TopRight,
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Fill,
+                Padding = new Padding(8, 0, 0, 0)
             };
             statusPanel.Controls.Add(_statusLabel, 0, 0);
             statusPanel.Controls.Add(_updateStatusLabel, 0, 1);
@@ -212,6 +215,7 @@ namespace RDPGuard
             _blockedList.Columns.Add("Sayi", 70);
             _blockedList.Columns.Add("Kural", 430);
             _blockedList.SelectedIndexChanged += (_, __) => _unblockButton.Enabled = _blockedList.SelectedItems.Count > 0;
+            _blockedList.Resize += (_, __) => ResizeBlockedColumns();
             root.Controls.Add(WrapSection(_blockedList, out _blockedTitleLabel), 0, 2);
 
             _logList = new ListBox
@@ -227,71 +231,109 @@ namespace RDPGuard
 
         private Control BuildSettingsPanel()
         {
-            _settingsPanel = new Panel
+            var scrollHost = new Panel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(16),
+                AutoScroll = true,
                 Margin = new Padding(0, 0, 0, 10)
             };
 
-            var table = new TableLayoutPanel
+            _settingsPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 216,
+                MinimumSize = new Size(760, 216),
+                Padding = new Padding(16)
+            };
+            scrollHost.Controls.Add(_settingsPanel);
+
+            var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 6,
-                RowCount = 4
+                ColumnCount = 3,
+                RowCount = 1
             };
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 148));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 148));
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
-            table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            _settingsPanel.Controls.Add(table);
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+            _settingsPanel.Controls.Add(layout);
+
+            var guardPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, Margin = new Padding(0, 0, 14, 0) };
+            guardPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+            guardPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            guardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+            guardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+            guardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            guardPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.Controls.Add(guardPanel, 0, 0);
 
             _thresholdLabel = LabelFor(string.Empty, DockStyle.Fill);
-            table.Controls.Add(_thresholdLabel, 0, 0);
-            _thresholdInput = new NumericUpDown { Minimum = AppConfig.MinFailureThreshold, Maximum = AppConfig.MaxFailureThreshold, Dock = DockStyle.Fill };
-            table.Controls.Add(_thresholdInput, 1, 0);
+            guardPanel.Controls.Add(_thresholdLabel, 0, 0);
+            _thresholdInput = new NumericUpDown { Minimum = AppConfig.MinFailureThreshold, Maximum = AppConfig.MaxFailureThreshold, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 8, 4) };
+            guardPanel.Controls.Add(_thresholdInput, 1, 0);
 
             _intervalLabel = LabelFor(string.Empty, DockStyle.Fill);
-            table.Controls.Add(_intervalLabel, 0, 1);
-            _intervalInput = new NumericUpDown { Minimum = AppConfig.MinCheckIntervalMinutes, Maximum = AppConfig.MaxCheckIntervalMinutes, Dock = DockStyle.Fill };
-            table.Controls.Add(_intervalInput, 1, 1);
+            guardPanel.Controls.Add(_intervalLabel, 0, 1);
+            _intervalInput = new NumericUpDown { Minimum = AppConfig.MinCheckIntervalMinutes, Maximum = AppConfig.MaxCheckIntervalMinutes, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 8, 4) };
+            guardPanel.Controls.Add(_intervalInput, 1, 1);
 
-            _startupCheck = new CheckBox { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
-            table.Controls.Add(_startupCheck, 2, 0);
-            table.SetColumnSpan(_startupCheck, 2);
+            _toggleButton = Button(string.Empty);
+            _toggleButton.Click += (_, __) => ToggleMonitoring();
+            _checkButton = Button(string.Empty);
+            _checkButton.Click += (_, __) => ThreadPool.QueueUserWorkItem(___ => _service.CheckNow());
+            var primaryActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 2, 8, 0) };
+            primaryActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            primaryActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            primaryActions.Controls.Add(_toggleButton, 0, 0);
+            primaryActions.Controls.Add(_checkButton, 1, 0);
+            guardPanel.Controls.Add(primaryActions, 0, 2);
+            guardPanel.SetColumnSpan(primaryActions, 2);
 
-            var languagePanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0, 0, 8, 0) };
-            languagePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76));
-            languagePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            _whitelistText = new TextBox
+            {
+                Multiline = true,
+                ScrollBars = ScrollBars.Vertical,
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Consolas", 9F),
+                Margin = new Padding(0, 4, 8, 0)
+            };
+            _whitelistLabel = LabelFor(string.Empty, DockStyle.Top);
+            var whitelistPanel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, Margin = new Padding(0) };
+            whitelistPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+            whitelistPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            whitelistPanel.Controls.Add(_whitelistLabel, 0, 0);
+            whitelistPanel.Controls.Add(_whitelistText, 0, 1);
+            guardPanel.Controls.Add(whitelistPanel, 0, 3);
+            guardPanel.SetColumnSpan(whitelistPanel, 2);
+
+            var preferencePanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Margin = new Padding(0, 0, 14, 0) };
+            preferencePanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+            preferencePanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+            preferencePanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            preferencePanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            preferencePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.Controls.Add(preferencePanel, 1, 0);
+
             _languageLabel = LabelFor(string.Empty, DockStyle.Fill);
             _languageCombo = new ComboBox
             {
                 Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Margin = new Padding(0, 4, 0, 4)
             };
             foreach (var language in Localization.Languages)
             {
                 _languageCombo.Items.Add(language);
             }
-            languagePanel.Controls.Add(_languageLabel, 0, 0);
-            languagePanel.Controls.Add(_languageCombo, 1, 0);
-            table.Controls.Add(languagePanel, 2, 1);
-            table.SetColumnSpan(languagePanel, 2);
+            preferencePanel.Controls.Add(FieldPanel(_languageLabel, _languageCombo), 0, 0);
 
-            var themePanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0, 0, 8, 0) };
-            themePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76));
-            themePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             _themeLabel = LabelFor(string.Empty, DockStyle.Fill);
             _themeCombo = new ComboBox
             {
                 Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Margin = new Padding(0, 4, 0, 4)
             };
             _themeCombo.SelectedIndexChanged += (_, __) =>
             {
@@ -302,48 +344,45 @@ namespace RDPGuard
                     ApplyTheme();
                 }
             };
-            themePanel.Controls.Add(_themeLabel, 0, 0);
-            themePanel.Controls.Add(_themeCombo, 1, 0);
-            table.Controls.Add(themePanel, 4, 2);
-            table.SetColumnSpan(themePanel, 2);
+            preferencePanel.Controls.Add(FieldPanel(_themeLabel, _themeCombo), 0, 1);
 
-            _toggleButton = Button(string.Empty);
-            _toggleButton.Click += (_, __) => ToggleMonitoring();
-            table.Controls.Add(_toggleButton, 4, 0);
+            _startupCheck = new CheckBox { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Margin = new Padding(0, 6, 0, 0) };
+            preferencePanel.Controls.Add(_startupCheck, 0, 2);
 
-            _checkButton = Button(string.Empty);
-            _checkButton.Click += (_, __) => ThreadPool.QueueUserWorkItem(___ => _service.CheckNow());
-            table.Controls.Add(_checkButton, 5, 0);
+            var configPathLabel = new Label
+            {
+                Text = AppConfig.ConfigPath,
+                Dock = DockStyle.Fill,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(0, 6, 0, 0)
+            };
+            preferencePanel.Controls.Add(configPathLabel, 0, 3);
+
+            var actionPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoScroll = true,
+                Margin = new Padding(0)
+            };
+            layout.Controls.Add(actionPanel, 2, 0);
 
             _saveButton = Button(string.Empty);
             _saveButton.Click += (_, __) => SaveSettings();
-            table.Controls.Add(_saveButton, 4, 1);
+            AddActionButton(actionPanel, _saveButton);
 
             _unblockButton = Button(string.Empty);
             _unblockButton.Enabled = false;
             _unblockButton.Click += (_, __) => UnblockSelected();
-            table.Controls.Add(_unblockButton, 5, 1);
+            AddActionButton(actionPanel, _unblockButton);
 
             _updateButton = Button(string.Empty);
             _updateButton.Click += (_, __) => CheckForUpdates(showDialog: true);
-            table.Controls.Add(_updateButton, 4, 3);
-            table.SetColumnSpan(_updateButton, 2);
+            AddActionButton(actionPanel, _updateButton);
 
-            _whitelistText = new TextBox
-            {
-                Multiline = true,
-                ScrollBars = ScrollBars.Vertical,
-                Dock = DockStyle.Fill,
-                BorderStyle = BorderStyle.FixedSingle,
-                Font = new Font("Consolas", 9F)
-            };
-            _whitelistLabel = LabelFor(string.Empty, DockStyle.Top);
-            table.Controls.Add(_whitelistLabel, 0, 2);
-            table.SetColumnSpan(_whitelistText, 3);
-            table.Controls.Add(_whitelistText, 1, 2);
-            table.SetRowSpan(_whitelistText, 2);
-
-            return _settingsPanel;
+            return scrollHost;
         }
 
         private static Label LabelFor(string text, DockStyle dock)
@@ -369,6 +408,31 @@ namespace RDPGuard
             };
             button.FlatAppearance.BorderSize = 0;
             return button;
+        }
+
+        private static TableLayoutPanel FieldPanel(Control label, Control input)
+        {
+            var panel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0)
+            };
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            panel.Controls.Add(label, 0, 0);
+            panel.Controls.Add(input, 1, 0);
+            return panel;
+        }
+
+        private static void AddActionButton(FlowLayoutPanel panel, Button button)
+        {
+            button.Dock = DockStyle.None;
+            button.Size = new Size(190, 34);
+            button.Margin = new Padding(0, 0, 8, 8);
+            button.AutoEllipsis = true;
+            panel.Controls.Add(button);
         }
 
         private Control WrapSection(Control content, out Label label, Button actionButton = null)
@@ -485,6 +549,7 @@ namespace RDPGuard
                 _blockedTitleLabel.Text = L("BlockedIps") + " (" + displayedBlockedIps + "/" + totalBlockedIps + ")";
             }
 
+            ResizeBlockedColumns();
             _unblockButton.Enabled = _blockedList.SelectedItems.Count > 0;
         }
 
@@ -851,6 +916,7 @@ namespace RDPGuard
                 _blockedList.Columns[1].Text = L("Date");
                 _blockedList.Columns[2].Text = L("Count");
                 _blockedList.Columns[3].Text = L("Rule");
+                ResizeBlockedColumns();
             }
 
             if (_trayOpenItem != null)
@@ -865,6 +931,25 @@ namespace RDPGuard
         private string L(string key)
         {
             return Localization.Text(_languageCode, key);
+        }
+
+        private void ResizeBlockedColumns()
+        {
+            if (_blockedList == null || _blockedList.Columns.Count < 4)
+            {
+                return;
+            }
+
+            var available = Math.Max(620, _blockedList.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 6);
+            var ipWidth = Math.Min(190, Math.Max(150, available / 5));
+            var dateWidth = Math.Min(170, Math.Max(145, available / 5));
+            var countWidth = 74;
+            var ruleWidth = Math.Max(230, available - ipWidth - dateWidth - countWidth);
+
+            _blockedList.Columns[0].Width = ipWidth;
+            _blockedList.Columns[1].Width = dateWidth;
+            _blockedList.Columns[2].Width = countWidth;
+            _blockedList.Columns[3].Width = ruleWidth;
         }
 
         private void SelectLanguage(string code)
