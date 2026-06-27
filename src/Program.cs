@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Threading;
 using System.Windows.Forms;
@@ -15,6 +17,10 @@ namespace RDPGuard
         [STAThread]
         private static void Main(string[] args)
         {
+            InstallExceptionHandlers();
+            TrySetHighPriority();
+            TryRegisterApplicationRestart();
+
             _mutex = new Mutex(true, "Global\\RDPGuard_7BB1E64C_1E2A_4F88_B88E_0D9E7F238C88", out var createdNew);
             if (!createdNew)
             {
@@ -34,6 +40,7 @@ namespace RDPGuard
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
             if (!IsAdministrator())
             {
@@ -42,7 +49,15 @@ namespace RDPGuard
             }
 
             var startInWindow = args.Any(arg => string.Equals(arg, "--window", StringComparison.OrdinalIgnoreCase));
-            Application.Run(new MainForm(!startInWindow, _showWindowEvent));
+            try
+            {
+                Application.Run(new MainForm(!startInWindow, _showWindowEvent));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.WriteException("Fatal Application.Run failure", ex);
+                throw;
+            }
         }
 
         private static bool IsAdministrator()
@@ -53,5 +68,52 @@ namespace RDPGuard
                 return principal.IsInRole(WindowsBuiltInRole.Administrator);
             }
         }
+
+        private static void InstallExceptionHandlers()
+        {
+            Application.ThreadException += (_, e) =>
+            {
+                AppLogger.WriteException("Unhandled UI thread exception", e.Exception);
+            };
+
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            {
+                AppLogger.WriteException("Unhandled AppDomain exception", e.ExceptionObject as Exception);
+            };
+        }
+
+        private static void TrySetHighPriority()
+        {
+            try
+            {
+                using (var process = Process.GetCurrentProcess())
+                {
+                    process.PriorityClass = ProcessPriorityClass.High;
+                }
+
+                Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
+                AppLogger.Write("Process priority set to High.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.WriteException("Process priority could not be raised", ex);
+            }
+        }
+
+        private static void TryRegisterApplicationRestart()
+        {
+            try
+            {
+                var result = RegisterApplicationRestart("--tray", 0);
+                AppLogger.Write("Application restart registration result: " + result);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.WriteException("Application restart registration failed", ex);
+            }
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern int RegisterApplicationRestart(string commandLineArgs, int flags);
     }
 }

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 
@@ -479,7 +478,7 @@ namespace RDPGuard
         private void OnLog(string message)
         {
             var line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + message;
-            AppendLogFile(line);
+            AppLogger.Write(message);
             Log?.Invoke(this, line);
         }
 
@@ -488,23 +487,6 @@ namespace RDPGuard
             ConfigChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        private static void AppendLogFile(string line)
-        {
-            try
-            {
-                Directory.CreateDirectory(AppConfig.DataDirectory);
-                if (File.Exists(AppConfig.LogPath) && new FileInfo(AppConfig.LogPath).Length > 1024 * 1024)
-                {
-                    File.Copy(AppConfig.LogPath, AppConfig.LogPath + ".1", true);
-                    File.WriteAllText(AppConfig.LogPath, string.Empty);
-                }
-
-                File.AppendAllText(AppConfig.LogPath, line + Environment.NewLine);
-            }
-            catch
-            {
-            }
-        }
     }
 
     public sealed class CheckCompletedEventArgs : EventArgs

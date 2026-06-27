@@ -40,6 +40,7 @@ When closing the window, the app offers two choices: `Minimize to tray` or `Clos
 - If config state and actual firewall state diverge, the next check revalidates the record.
 - Logs are written to `C:\ProgramData\RDPGuard\rdpguard.log` and rotated above 1 MB.
 - Language selection only affects UI text. Event scanning, IP handling, firewall logic, counters, and time intervals are language-independent.
+- On startup, RDP Guard attempts to raise its process priority to `High`, logs unhandled exceptions, and registers with Windows application restart for better background resilience.
 
 ---
 
@@ -85,3 +86,4 @@ Pencere kapatilirken iki secenek sunulur: `Simge durumuna kucult` veya `Programi
 - Config ile gercek firewall durumu ayrisirsa bir sonraki kontrolde kayit yeniden dogrulanir.
 - Loglar `C:\ProgramData\RDPGuard\rdpguard.log` altinda tutulur ve 1 MB uzerinde rotate edilir.
 - Dil secimi yalnizca UI/metin katmanini etkiler. Event tarama, IP islemleri, firewall mantigi, sayaclar ve zaman araliklari dil ayarindan bagimsizdir.
+- RDP Guard acilista islem onceligini `High` yapmayi dener, yakalanmamis hatalari loglar ve arka plan kararliligi icin Windows application restart kaydi olusturur.

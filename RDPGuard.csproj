@@ -37,6 +37,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="src\AppConfig.cs" />
+    <Compile Include="src\AppLogger.cs" />
     <Compile Include="src\AuditFailureScanner.cs" />
     <Compile Include="src\FirewallManager.cs" />
     <Compile Include="src\GuardService.cs" />
