@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace RDPGuard
 {
@@ -216,46 +217,61 @@ namespace RDPGuard
             var scopes = new List<string>();
             var ruleCount = 0;
             var broadBlockRuleCount = 0;
+            object policy = null;
+            object rulesObject = null;
 
-            var policyType = Type.GetTypeFromProgID("HNetCfg.FwPolicy2");
-            if (policyType == null)
+            try
             {
-                throw new InvalidOperationException("Windows Firewall COM API is unavailable.");
-            }
-
-            var policy = Activator.CreateInstance(policyType);
-            var rules = GetProperty(policy, "Rules") as IEnumerable;
-            if (rules == null)
-            {
-                throw new InvalidOperationException("Windows Firewall COM API did not return a rule collection.");
-            }
-
-            foreach (var rule in rules)
-            {
-                ruleCount++;
-                try
+                var policyType = Type.GetTypeFromProgID("HNetCfg.FwPolicy2");
+                if (policyType == null)
                 {
-                    if (!IsBroadInboundBlockRule(rule))
-                    {
-                        continue;
-                    }
-
-                    broadBlockRuleCount++;
-                    var remoteAddresses = Convert.ToString(GetProperty(rule, "RemoteAddresses"));
-                    if (string.IsNullOrWhiteSpace(remoteAddresses))
-                    {
-                        continue;
-                    }
-
-                    scopes.AddRange(remoteAddresses
-                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(item => item.Trim())
-                        .Where(item => item.Length > 0));
+                    throw new InvalidOperationException("Windows Firewall COM API is unavailable.");
                 }
-                catch (Exception ex)
+
+                policy = Activator.CreateInstance(policyType);
+                rulesObject = GetProperty(policy, "Rules");
+                var rules = rulesObject as IEnumerable;
+                if (rules == null)
                 {
-                    AppLogger.WriteException("Firewall COM rule parse failed", ex);
+                    throw new InvalidOperationException("Windows Firewall COM API did not return a rule collection.");
                 }
+
+                foreach (var rule in rules)
+                {
+                    ruleCount++;
+                    try
+                    {
+                        if (!IsBroadInboundBlockRule(rule))
+                        {
+                            continue;
+                        }
+
+                        broadBlockRuleCount++;
+                        var remoteAddresses = Convert.ToString(GetProperty(rule, "RemoteAddresses"));
+                        if (string.IsNullOrWhiteSpace(remoteAddresses))
+                        {
+                            continue;
+                        }
+
+                        scopes.AddRange(remoteAddresses
+                            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(item => item.Trim())
+                            .Where(item => item.Length > 0));
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.WriteException("Firewall COM rule parse failed", ex);
+                    }
+                    finally
+                    {
+                        ReleaseComObject(rule);
+                    }
+                }
+            }
+            finally
+            {
+                ReleaseComObject(rulesObject);
+                ReleaseComObject(policy);
             }
 
             stopwatch.Stop();
@@ -293,6 +309,26 @@ namespace RDPGuard
                 null,
                 instance,
                 null);
+        }
+
+        private static void ReleaseComObject(object value)
+        {
+            if (value == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (Marshal.IsComObject(value))
+                {
+                    Marshal.FinalReleaseComObject(value);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.WriteException("Firewall COM release failed", ex);
+            }
         }
 
         private static string FormatSample(IEnumerable<string> values, int limit)

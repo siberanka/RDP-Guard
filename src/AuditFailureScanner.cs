@@ -12,6 +12,8 @@ namespace RDPGuard
     public sealed class AuditFailureScanner
     {
         private static readonly XNamespace EventNamespace = "http://schemas.microsoft.com/win/2004/08/events/event";
+        private const int LogonTypePropertyIndex = 10;
+        private const int IpAddressPropertyIndex = 19;
         private const int ReaderBatchSize = 64;
         private const int YieldEveryRecords = 500;
 
@@ -96,6 +98,11 @@ namespace RDPGuard
         {
             ipAddress = null;
 
+            if (TryReadRemoteFailureFromProperties(record, out ipAddress, out var isRemoteFailure))
+            {
+                return isRemoteFailure;
+            }
+
             try
             {
                 var xml = XDocument.Parse(record.ToXml());
@@ -119,6 +126,42 @@ namespace RDPGuard
             }
             catch
             {
+                return false;
+            }
+        }
+
+        private static bool TryReadRemoteFailureFromProperties(EventRecord record, out string ipAddress, out bool isRemoteFailure)
+        {
+            ipAddress = null;
+            isRemoteFailure = false;
+
+            try
+            {
+                var properties = record.Properties;
+                if (properties == null || properties.Count <= IpAddressPropertyIndex)
+                {
+                    return false;
+                }
+
+                var logonTypeText = Convert.ToString(properties[LogonTypePropertyIndex].Value);
+                if (!int.TryParse(logonTypeText, out var logonType))
+                {
+                    return false;
+                }
+
+                ipAddress = Convert.ToString(properties[IpAddressPropertyIndex].Value);
+                isRemoteFailure = logonType == 3 || logonType == 10;
+                if (isRemoteFailure && !IsBlockableRemoteIp(ipAddress))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            catch
+            {
+                ipAddress = null;
+                isRemoteFailure = false;
                 return false;
             }
         }

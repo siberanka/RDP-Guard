@@ -18,7 +18,7 @@ namespace RDPGuard
         private static void Main(string[] args)
         {
             InstallExceptionHandlers();
-            TrySetHighPriority();
+            TrySetBalancedPriority();
             TryRegisterApplicationRestart();
             AppLogger.WriteStartupSnapshot(args);
             Application.ApplicationExit += (_, __) => AppLogger.Write("Application exit.");
@@ -86,21 +86,21 @@ namespace RDPGuard
             };
         }
 
-        private static void TrySetHighPriority()
+        private static void TrySetBalancedPriority()
         {
             try
             {
                 using (var process = Process.GetCurrentProcess())
                 {
-                    process.PriorityClass = ProcessPriorityClass.High;
+                    process.PriorityClass = ProcessPriorityClass.AboveNormal;
                 }
 
                 Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
-                AppLogger.Write("Process priority set to High.");
+                AppLogger.Write("Process priority set to AboveNormal.");
             }
             catch (Exception ex)
             {
-                AppLogger.WriteException("Process priority could not be raised", ex);
+                AppLogger.WriteException("Process priority could not be adjusted", ex);
             }
         }
 
